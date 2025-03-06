@@ -1,22 +1,22 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { RelationshipStatus } from '../types';
 import { format, parseISO, addDays, differenceInDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 
-// NoSSR bileşeni - sadece client-side'da render edilecek
-function NoSSR({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-  
+// Temiz bir client-side-only bileşen
+function ClientOnly({ children, fallback = null }: { children: React.ReactNode, fallback?: React.ReactNode }) {
+  const [hasMounted, setHasMounted] = useState(false);
+
   useEffect(() => {
-    setMounted(true);
+    setHasMounted(true);
   }, []);
-  
-  if (!mounted) {
-    return (
-      <div className="h-64 md:h-80 bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700 flex items-center justify-center">
+
+  if (!hasMounted) {
+    return fallback || (
+      <div className="flex items-center justify-center h-full">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
           <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
@@ -24,80 +24,114 @@ function NoSSR({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  
+
   return <>{children}</>;
 }
 
+// Grafik tipi için arayüz
+interface ChartProps {
+  data: {
+    labels: string[];
+    datasets: Array<{
+      label: string;
+      data: number[];
+      backgroundColor: string;
+      borderColor: string;
+      borderWidth: number;
+      tension?: number;
+      fill?: boolean | object;
+      pointRadius?: number;
+      pointBackgroundColor?: string;
+    }>;
+  };
+  options: any;
+}
+
+// Chart.js grafiği için bileşen - dinamik yüklenir
+function ChartComponent({ data, options }: ChartProps) {
+  const [Chart, setChart] = useState<React.ComponentType<any> | null>(null);
+
+  useEffect(() => {
+    // Client tarafında dinamik olarak Chart.js ve LineChart yükle
+    const loadChart = async () => {
+      try {
+        const chartJS = await import('chart.js');
+        const { Chart, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } = chartJS;
+
+        // Chart.js bileşenlerini kaydet
+        Chart.register(
+          CategoryScale,
+          LinearScale,
+          PointElement,
+          LineElement,
+          Title,
+          Tooltip,
+          Legend,
+          Filler
+        );
+
+        // react-chartjs-2 Line bileşenini yükle
+        const reactChartJS = await import('react-chartjs-2');
+        setChart(() => reactChartJS.Line);
+      } catch (error) {
+        console.error('Chart yüklenirken hata oluştu:', error);
+      }
+    };
+
+    loadChart();
+  }, []);
+
+  // Chart bileşeni yüklenene kadar yükleme göstergesi
+  if (!Chart) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+          <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Chart yüklendi, veriyi göster
+  return <Chart data={data} options={options} />;
+}
+
+// Boş veri durumu
+function EmptyChart() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center text-gray-500 dark:text-gray-400">
+        <svg className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+        </svg>
+        <p>Seçilen zaman aralığında veri bulunmuyor</p>
+      </div>
+    </div>
+  );
+}
+
+// Ana bileşen
 interface RelationshipChartProps {
   relationship: RelationshipStatus;
 }
 
 export default function RelationshipChart({ relationship }: RelationshipChartProps) {
-  const [chartComponent, setChartComponent] = useState<React.ReactNode>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'month' | 'week'>('all');
+  const [chartData, setChartData] = useState<any>(null);
 
+  // Periyot değiştiğinde ya da ilişki verisi değiştiğinde grafiği güncelle
   useEffect(() => {
-    // Dinamik olarak Chart.js'i import et
-    import('chart.js').then((ChartJS) => {
-      const { 
-        Chart,
-        CategoryScale, 
-        LinearScale, 
-        PointElement, 
-        LineElement, 
-        Title, 
-        Tooltip, 
-        Legend,
-        Filler 
-      } = ChartJS;
-      
-      // Chart.js bileşenlerini kaydet
-      Chart.register(
-        CategoryScale,
-        LinearScale,
-        PointElement,
-        LineElement,
-        Title,
-        Tooltip,
-        Legend,
-        Filler
-      );
-      
-      // Line bileşenini import et
-      import('react-chartjs-2').then((ReactChartJS) => {
-        const { Line } = ReactChartJS;
-        
-        // Veriyi hazırla ve chart component'i ayarla
-        const chartData = prepareChartData(relationship, activeTab, ChartJS);
-        const options = getChartOptions();
-        
-        if (chartData.labels?.length) {
-          setChartComponent(
-            <Line data={chartData} options={options} />
-          );
-        } else {
-          setChartComponent(
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-gray-500 dark:text-gray-400">
-                <svg className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                </svg>
-                <p>Seçilen zaman aralığında veri bulunmuyor</p>
-              </div>
-            </div>
-          );
-        }
-      });
-    });
+    // Veriyi hazırla
+    prepareChartData(relationship, activeTab);
   }, [relationship, activeTab]);
 
   // Chart.js için veri hazırlama
   const prepareChartData = (
     relationship: RelationshipStatus, 
     period: 'all' | 'month' | 'week',
-    ChartJS: any
   ) => {
-    // Eğer olay yoksa
+    // Eğer olay yoksa sadece başlangıç değerini göster
     if (!relationship.events.length) {
       const startDate = parseISO(relationship.startDate);
       
@@ -105,7 +139,7 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         format(startDate, 'dd MMM', { locale: tr })
       ];
       
-      return {
+      setChartData({
         labels,
         datasets: [
           {
@@ -137,7 +171,8 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
             }
           },
         ],
-      };
+      });
+      return;
     }
 
     // Olayları tarihe göre sırala (eskiden yeniye)
@@ -179,7 +214,7 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         format(point.date, 'dd MMM', { locale: tr })
       );
       
-      return {
+      setChartData({
         labels,
         datasets: [
           {
@@ -211,7 +246,8 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
             }
           },
         ],
-      };
+      });
+      return;
     }
 
     // Başlangıç kredi ve güven değerleri 
@@ -261,10 +297,8 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     
     // Veri noktası yoksa boş grafik göster
     if (dataPoints.length === 0) {
-      return {
-        labels: [],
-        datasets: []
-      };
+      setChartData(null);
+      return;
     }
 
     // Grafik verilerini oluştur
@@ -272,7 +306,7 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
       format(point.date, 'dd MMM', { locale: tr })
     );
     
-    return {
+    setChartData({
       labels,
       datasets: [
         {
@@ -304,75 +338,74 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
           }
         },
       ],
-    };
+    });
   };
 
-  // Chart.js için options oluştur
-  const getChartOptions = () => {
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: {
-          beginAtZero: true,
-          grid: {
-            color: 'rgba(0, 0, 0, 0.05)',
-          }
-        },
-        x: {
-          grid: {
-            display: false
-          }
+  // Chart options
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: 'rgba(0, 0, 0, 0.05)',
         }
       },
-      plugins: {
-        legend: {
-          position: 'top' as const,
-          labels: {
-            usePointStyle: true,
-            boxWidth: 10,
-            boxHeight: 10,
-            padding: 20,
-            font: {
-              size: 12
-            }
-          }
-        },
-        tooltip: {
-          backgroundColor: 'rgba(255, 255, 255, 0.8)',
-          titleColor: '#1f2937',
-          bodyColor: '#4b5563',
-          borderColor: 'rgba(0, 0, 0, 0.1)',
-          borderWidth: 1,
-          padding: 12,
-          boxPadding: 6,
-          usePointStyle: true,
-          callbacks: {
-            label: function(context: any) {
-              const label = context.dataset.label || '';
-              const value = context.parsed.y;
-              return `${label}: ${value}`;
-            }
-          }
-        }
-      },
-      interaction: {
-        mode: 'index' as const,
-        intersect: false,
-      },
-      elements: {
-        line: {
-          borderWidth: 3,
-          borderJoinStyle: 'round' as const,
-        },
-        point: {
-          hoverRadius: 8,
-          hoverBorderWidth: 2
+      x: {
+        grid: {
+          display: false
         }
       }
-    };
+    },
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: {
+          usePointStyle: true,
+          boxWidth: 10,
+          boxHeight: 10,
+          padding: 20,
+          font: {
+            size: 12
+          }
+        }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        titleColor: '#1f2937',
+        bodyColor: '#4b5563',
+        borderColor: 'rgba(0, 0, 0, 0.1)',
+        borderWidth: 1,
+        padding: 12,
+        boxPadding: 6,
+        usePointStyle: true,
+        callbacks: {
+          label: function(context: any) {
+            const label = context.dataset.label || '';
+            const value = context.parsed.y;
+            return `${label}: ${value}`;
+          }
+        }
+      }
+    },
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
+    elements: {
+      line: {
+        borderWidth: 3,
+        borderJoinStyle: 'round' as const,
+      },
+      point: {
+        hoverRadius: 8,
+        hoverBorderWidth: 2
+      }
+    }
   };
 
+  // Sekme butonu bileşeni
   const TabButton = ({ label, value, currentValue, onClick }: { 
     label: string, 
     value: 'all' | 'month' | 'week', 
@@ -406,16 +439,13 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <NoSSR>
-          {chartComponent || (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
-              </div>
-            </div>
+        <ClientOnly>
+          {chartData && chartData.labels && chartData.labels.length > 0 ? (
+            <ChartComponent data={chartData} options={chartOptions} />
+          ) : (
+            <EmptyChart />
           )}
-        </NoSSR>
+        </ClientOnly>
       </motion.div>
     </div>
   );
