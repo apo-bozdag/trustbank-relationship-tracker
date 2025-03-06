@@ -1,35 +1,45 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { 
-  Chart as ChartJS, 
-  CategoryScale, 
-  LinearScale, 
-  PointElement, 
-  LineElement, 
-  Title, 
-  Tooltip, 
-  Legend,
-  ChartData, 
-  ChartOptions,
-  Filler 
-} from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import dynamic from 'next/dynamic';
 import { RelationshipStatus } from '../types';
 import { format, parseISO, addDays, differenceInDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
+import type { ChartData, ChartOptions } from 'chart.js';
 
-// Chart.js bileşenlerini kaydet
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
+// Chart.js bileşenlerini dynamic import ile sadece client tarafında yükle
+const LineChart = dynamic(
+  () => import('react-chartjs-2').then(mod => {
+    // Chart.js'i sadece client tarafında import et ve kaydet
+    import('chart.js').then(ChartJS => {
+      const { 
+        Chart, 
+        CategoryScale, 
+        LinearScale, 
+        PointElement, 
+        LineElement, 
+        Title, 
+        Tooltip, 
+        Legend,
+        Filler 
+      } = ChartJS;
+      
+      // Chart.js bileşenlerini kaydet
+      Chart.register(
+        CategoryScale,
+        LinearScale,
+        PointElement,
+        LineElement,
+        Title,
+        Tooltip,
+        Legend,
+        Filler
+      );
+    });
+    return mod.Line;
+  }),
+  { ssr: false } // SSR'yi devre dışı bırak
 );
 
 interface RelationshipChartProps {
@@ -42,12 +52,20 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     datasets: []
   });
   const [activeTab, setActiveTab] = useState<'all' | 'month' | 'week'>('all');
+  const [isClient, setIsClient] = useState(false);
   const chartRef = useRef<any>(null);
 
+  // Client tarafında olduğumuzu kontrol et
   useEffect(() => {
-    // Grafik verisini hazırla
-    prepareChartData(relationship, activeTab);
-  }, [relationship, activeTab]);
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (isClient) {
+      // Grafik verisini hazırla
+      prepareChartData(relationship, activeTab);
+    }
+  }, [relationship, activeTab, isClient]);
 
   const prepareChartData = (relationship: RelationshipStatus, period: 'all' | 'month' | 'week') => {
     if (!relationship.events.length) {
@@ -344,6 +362,18 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     </button>
   );
 
+  // İlk renderda henüz client tarafında değilsek veya veri hazır değilse, loading göster
+  if (!isClient) {
+    return (
+      <div className="h-64 md:h-80 bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+          <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end space-x-2 mb-4">
@@ -360,7 +390,7 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         transition={{ duration: 0.3 }}
       >
         {chartData.labels?.length ? (
-          <Line ref={chartRef} data={chartData} options={options} />
+          <LineChart data={chartData} options={options} />
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-500 dark:text-gray-400">

@@ -20,7 +20,7 @@ Bu uygulama, ilişkilerdeki "kredi" ve "güven" değerlerini takip etmenize olan
 
 1. Projeyi klonlayın
 ```bash
-git clone https://github.com/username/trustbank-relationship-tracker.git
+git clone https://github.com/apo-bozdag/trustbank-relationship-tracker.git
 cd trustbank-relationship-tracker
 ```
 
