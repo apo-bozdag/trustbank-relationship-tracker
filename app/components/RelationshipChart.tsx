@@ -1,101 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { RelationshipStatus } from '../types';
 import { format, parseISO, addDays, differenceInDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 
-// Temiz bir client-side-only bileşen
-function ClientOnly({ children, fallback = null }: { children: React.ReactNode, fallback?: React.ReactNode }) {
-  const [hasMounted, setHasMounted] = useState(false);
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
-
-  if (!hasMounted) {
-    return fallback || (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-          <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
-        </div>
+// Chart component'i server-side render olmadan yüklenir
+const DynamicChart = dynamic(() => import('./ChartComponent'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+        <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
       </div>
-    );
-  }
-
-  return <>{children}</>;
-}
-
-// Grafik tipi için arayüz
-interface ChartProps {
-  data: {
-    labels: string[];
-    datasets: Array<{
-      label: string;
-      data: number[];
-      backgroundColor: string;
-      borderColor: string;
-      borderWidth: number;
-      tension?: number;
-      fill?: boolean | object;
-      pointRadius?: number;
-      pointBackgroundColor?: string;
-    }>;
-  };
-  options: any;
-}
-
-// Chart.js grafiği için bileşen - dinamik yüklenir
-function ChartComponent({ data, options }: ChartProps) {
-  const [Chart, setChart] = useState<React.ComponentType<any> | null>(null);
-
-  useEffect(() => {
-    // Client tarafında dinamik olarak Chart.js ve LineChart yükle
-    const loadChart = async () => {
-      try {
-        const chartJS = await import('chart.js');
-        const { Chart, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } = chartJS;
-
-        // Chart.js bileşenlerini kaydet
-        Chart.register(
-          CategoryScale,
-          LinearScale,
-          PointElement,
-          LineElement,
-          Title,
-          Tooltip,
-          Legend,
-          Filler
-        );
-
-        // react-chartjs-2 Line bileşenini yükle
-        const reactChartJS = await import('react-chartjs-2');
-        setChart(() => reactChartJS.Line);
-      } catch (error) {
-        console.error('Chart yüklenirken hata oluştu:', error);
-      }
-    };
-
-    loadChart();
-  }, []);
-
-  // Chart bileşeni yüklenene kadar yükleme göstergesi
-  if (!Chart) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-          <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Chart yüklendi, veriyi göster
-  return <Chart data={data} options={options} />;
-}
+    </div>
+  )
+});
 
 // Boş veri durumu
 function EmptyChart() {
@@ -439,13 +362,11 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <ClientOnly>
-          {chartData && chartData.labels && chartData.labels.length > 0 ? (
-            <ChartComponent data={chartData} options={chartOptions} />
-          ) : (
-            <EmptyChart />
-          )}
-        </ClientOnly>
+        {chartData && chartData.labels && chartData.labels.length > 0 ? (
+          <DynamicChart data={chartData} options={chartOptions} />
+        ) : (
+          <EmptyChart />
+        )}
       </motion.div>
     </div>
   );
