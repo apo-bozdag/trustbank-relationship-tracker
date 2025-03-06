@@ -1,24 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# İlişki Takip Uygulaması
 
-## Getting Started
+Bu uygulama, ilişkilerdeki "kredi" ve "güven" değerlerini takip etmenize olanak tanır. "Kredi 100'den başlar, güven 0'dan başlar" felsefesine dayanarak, ilişkilerinizde meydana gelen olayların bu değerleri nasıl etkilediğini görselleştirmenize yardımcı olur.
 
-First, run the development server:
+## Özellikler
 
+- Kredi ve güven değerlerini görüntüleme
+- Olumlu ve olumsuz olaylar ekleme
+- Kredi ve güven değerlerindeki değişimleri grafik üzerinde takip etme
+- Olay geçmişini görüntüleme
+- İlişki verilerini sıfırlama
+
+## Başlarken
+
+### Gereksinimler
+
+- Node.js 18.0.0 veya üzeri
+
+### Kurulum
+
+1. Projeyi klonlayın
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/username/trustbank-relationship-tracker.git
+cd trustbank-relationship-tracker
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Bağımlılıkları yükleyin
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Geliştirme sunucusunu başlatın
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Tarayıcınızda [http://localhost:3000](http://localhost:3000) adresine gidin
+
+## Kullanım
+
+- **Yeni Olay Ekle**: Olumlu veya olumsuz bir olay eklemek için formu doldurun ve "Olay Ekle" düğmesine tıklayın.
+- **Grafik**: Kredi ve güven değerlerinin zaman içindeki değişimini grafik üzerinde görüntüleyin.
+- **Olay Geçmişi**: Geçmiş olayları tarihe göre sıralanmış şekilde görüntüleyin.
+- **Sıfırla**: İlişki verilerini sıfırlamak için "Sıfırla" düğmesine tıklayın.
+
+## Teknolojiler
+
+- [Next.js](https://nextjs.org/)
+- [React](https://reactjs.org/)
+- [TypeScript](https://www.typescriptlang.org/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Chart.js](https://www.chartjs.org/)
+- [date-fns](https://date-fns.org/)
 
 ## Learn More
 
