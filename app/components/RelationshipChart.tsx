@@ -357,13 +357,13 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         }
       },
       interaction: {
-        mode: 'index',
+        mode: 'index' as const,
         intersect: false,
       },
       elements: {
         line: {
           borderWidth: 3,
-          borderJoinStyle: 'round'
+          borderJoinStyle: 'round' as const,
         },
         point: {
           hoverRadius: 8,
