@@ -1,24 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
 import { RelationshipStatus } from '../types';
-import { format, parseISO, addDays, differenceInDays } from 'date-fns';
+import { format, parseISO, addDays, differenceInDays, isAfter } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
-
-// Chart component'i server-side render olmadan yüklenir
-const DynamicChart = dynamic(() => import('./ChartComponent'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center">
-        <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-        <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
-      </div>
-    </div>
-  )
-});
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Area,
+  AreaChart
+} from 'recharts';
 
 // Boş veri durumu
 function EmptyChart() {
@@ -34,6 +32,24 @@ function EmptyChart() {
   );
 }
 
+// Özel tooltip bileşeni
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white dark:bg-slate-800 p-3 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg">
+        <p className="text-sm font-medium text-gray-900 dark:text-white">{label}</p>
+        {payload.map((entry: any, index: number) => (
+          <p key={`item-${index}`} className="text-sm" style={{ color: entry.color }}>
+            {entry.name}: {entry.value}
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  return null;
+};
+
 // Ana bileşen
 interface RelationshipChartProps {
   relationship: RelationshipStatus;
@@ -41,15 +57,23 @@ interface RelationshipChartProps {
 
 export default function RelationshipChart({ relationship }: RelationshipChartProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'month' | 'week'>('all');
-  const [chartData, setChartData] = useState<any>(null);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [isClient, setIsClient] = useState(false);
+
+  // Client tarafında olduğumuzu kontrol et
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // Periyot değiştiğinde ya da ilişki verisi değiştiğinde grafiği güncelle
   useEffect(() => {
     // Veriyi hazırla
-    prepareChartData(relationship, activeTab);
-  }, [relationship, activeTab]);
+    if (isClient) {
+      prepareChartData(relationship, activeTab);
+    }
+  }, [relationship, activeTab, isClient]);
 
-  // Chart.js için veri hazırlama
+  // Recharts için veri hazırlama
   const prepareChartData = (
     relationship: RelationshipStatus, 
     period: 'all' | 'month' | 'week',
@@ -58,43 +82,11 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     if (!relationship.events.length) {
       const startDate = parseISO(relationship.startDate);
       
-      const labels = [
-        format(startDate, 'dd MMM', { locale: tr })
-      ];
-      
-      setChartData({
-        labels,
-        datasets: [
-          {
-            label: 'Kredi',
-            data: [relationship.credit],
-            borderColor: 'rgb(99, 102, 241)',
-            backgroundColor: 'rgba(99, 102, 241, 0.5)',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: 'rgb(99, 102, 241)',
-            tension: 0.3,
-            fill: {
-              target: 'origin',
-              above: 'rgba(99, 102, 241, 0.1)'
-            }
-          },
-          {
-            label: 'Güven',
-            data: [relationship.trust],
-            borderColor: 'rgb(20, 184, 166)',
-            backgroundColor: 'rgba(20, 184, 166, 0.5)',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: 'rgb(20, 184, 166)',
-            tension: 0.3,
-            fill: {
-              target: 'origin',
-              above: 'rgba(20, 184, 166, 0.1)'
-            }
-          },
-        ],
-      });
+      setChartData([{
+        date: format(startDate, 'dd MMM', { locale: tr }),
+        Kredi: relationship.credit,
+        Güven: relationship.trust
+      }]);
       return;
     }
 
@@ -118,58 +110,28 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     
     const dataPoints: {
       date: Date;
-      credit: number;
-      trust: number;
+      formattedDate: string;
+      Kredi: number;
+      Güven: number;
     }[] = [];
     
     // Başlangıç noktası (sadece zaman aralığı içindeyse veya tüm zamanı görüntülüyorsak)
-    if (period === 'all' || startDate >= filterDate) {
+    if (period === 'all' || isAfter(startDate, filterDate)) {
       dataPoints.push({
         date: startDate,
-        credit: relationship.credit, // Başlangıçta kullanıcının seçtiği kredi değeri
-        trust: relationship.trust // Başlangıçta kullanıcının seçtiği güven değeri
+        formattedDate: format(startDate, 'dd MMM', { locale: tr }),
+        Kredi: relationship.credit, // Başlangıçta kullanıcının seçtiği kredi değeri
+        Güven: relationship.trust // Başlangıçta kullanıcının seçtiği güven değeri
       });
     }
 
     // Hiç olay yoksa başlangıç değerlerini göster ve çık
     if (sortedEvents.length === 0) {
-      const labels = dataPoints.map(point => 
-        format(point.date, 'dd MMM', { locale: tr })
-      );
-      
-      setChartData({
-        labels,
-        datasets: [
-          {
-            label: 'Kredi',
-            data: dataPoints.map(point => point.credit),
-            borderColor: 'rgb(99, 102, 241)',
-            backgroundColor: 'rgba(99, 102, 241, 0.5)',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: 'rgb(99, 102, 241)',
-            tension: 0.3,
-            fill: {
-              target: 'origin',
-              above: 'rgba(99, 102, 241, 0.1)'
-            }
-          },
-          {
-            label: 'Güven',
-            data: dataPoints.map(point => point.trust),
-            borderColor: 'rgb(20, 184, 166)',
-            backgroundColor: 'rgba(20, 184, 166, 0.5)',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: 'rgb(20, 184, 166)',
-            tension: 0.3,
-            fill: {
-              target: 'origin',
-              above: 'rgba(20, 184, 166, 0.1)'
-            }
-          },
-        ],
-      });
+      setChartData(dataPoints.map(point => ({
+        date: point.formattedDate,
+        Kredi: point.Kredi,
+        Güven: point.Güven
+      })));
       return;
     }
 
@@ -178,8 +140,8 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     let currentTrust = relationship.trust;
     
     // Filtrelenen olaylar öncesindeki son durumu hesapla
-    const filteredEvents = sortedEvents.filter(event => new Date(event.date) >= filterDate);
-    const preFilteredEvents = sortedEvents.filter(event => new Date(event.date) < filterDate);
+    const filteredEvents = sortedEvents.filter(event => isAfter(new Date(event.date), filterDate));
+    const preFilteredEvents = sortedEvents.filter(event => !isAfter(new Date(event.date), filterDate));
     
     // Filtrelenen olaylar öncesindeki son durumu hesapla (başlangıç değerlerine göre değişimleri hesapla)
     preFilteredEvents.forEach(event => {
@@ -191,8 +153,9 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     if (period !== 'all' && preFilteredEvents.length > 0) {
       dataPoints.push({
         date: filterDate,
-        credit: currentCredit,
-        trust: currentTrust
+        formattedDate: format(filterDate, 'dd MMM', { locale: tr }),
+        Kredi: currentCredit,
+        Güven: currentTrust
       });
     }
     
@@ -201,10 +164,12 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
       currentCredit += event.creditChange;
       currentTrust += event.trustChange;
       
+      const eventDate = parseISO(event.date);
       dataPoints.push({
-        date: parseISO(event.date),
-        credit: currentCredit,
-        trust: currentTrust
+        date: eventDate,
+        formattedDate: format(eventDate, 'dd MMM', { locale: tr }),
+        Kredi: currentCredit,
+        Güven: currentTrust
       });
     });
     
@@ -213,119 +178,24 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     if (lastPoint && differenceInDays(now, lastPoint.date) > 0) {
       dataPoints.push({
         date: now,
-        credit: currentCredit,
-        trust: currentTrust
+        formattedDate: format(now, 'dd MMM', { locale: tr }),
+        Kredi: currentCredit,
+        Güven: currentTrust
       });
     }
     
     // Veri noktası yoksa boş grafik göster
     if (dataPoints.length === 0) {
-      setChartData(null);
+      setChartData([]);
       return;
     }
 
-    // Grafik verilerini oluştur
-    const labels = dataPoints.map(point => 
-      format(point.date, 'dd MMM', { locale: tr })
-    );
-    
-    setChartData({
-      labels,
-      datasets: [
-        {
-          label: 'Kredi',
-          data: dataPoints.map(point => point.credit),
-          borderColor: 'rgb(99, 102, 241)',
-          backgroundColor: 'rgba(99, 102, 241, 0.5)',
-          borderWidth: 3,
-          pointRadius: 5,
-          pointBackgroundColor: 'rgb(99, 102, 241)',
-          tension: 0.3,
-          fill: {
-            target: 'origin',
-            above: 'rgba(99, 102, 241, 0.1)'
-          }
-        },
-        {
-          label: 'Güven',
-          data: dataPoints.map(point => point.trust),
-          borderColor: 'rgb(20, 184, 166)',
-          backgroundColor: 'rgba(20, 184, 166, 0.5)',
-          borderWidth: 3,
-          pointRadius: 5,
-          pointBackgroundColor: 'rgb(20, 184, 166)',
-          tension: 0.3,
-          fill: {
-            target: 'origin',
-            above: 'rgba(20, 184, 166, 0.1)'
-          }
-        },
-      ],
-    });
-  };
-
-  // Chart options
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      y: {
-        beginAtZero: true,
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
-        }
-      },
-      x: {
-        grid: {
-          display: false
-        }
-      }
-    },
-    plugins: {
-      legend: {
-        position: 'top' as const,
-        labels: {
-          usePointStyle: true,
-          boxWidth: 10,
-          boxHeight: 10,
-          padding: 20,
-          font: {
-            size: 12
-          }
-        }
-      },
-      tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.8)',
-        titleColor: '#1f2937',
-        bodyColor: '#4b5563',
-        borderColor: 'rgba(0, 0, 0, 0.1)',
-        borderWidth: 1,
-        padding: 12,
-        boxPadding: 6,
-        usePointStyle: true,
-        callbacks: {
-          label: function(context: any) {
-            const label = context.dataset.label || '';
-            const value = context.parsed.y;
-            return `${label}: ${value}`;
-          }
-        }
-      }
-    },
-    interaction: {
-      mode: 'index' as const,
-      intersect: false,
-    },
-    elements: {
-      line: {
-        borderWidth: 3,
-        borderJoinStyle: 'round' as const,
-      },
-      point: {
-        hoverRadius: 8,
-        hoverBorderWidth: 2
-      }
-    }
+    // Recharts için veri formatını oluştur
+    setChartData(dataPoints.map(point => ({
+      date: point.formattedDate,
+      Kredi: point.Kredi,
+      Güven: point.Güven
+    })));
   };
 
   // Sekme butonu bileşeni
@@ -347,6 +217,33 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     </button>
   );
 
+  // Henüz client tarafında değilse, yükleme göstergesi
+  if (!isClient) {
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-end space-x-2 mb-4 opacity-50">
+          <TabButton label="Tüm Zamanlar" value="all" currentValue={activeTab} onClick={setActiveTab} />
+          <TabButton label="Son 30 Gün" value="month" currentValue={activeTab} onClick={setActiveTab} />
+          <TabButton label="Son 7 Gün" value="week" currentValue={activeTab} onClick={setActiveTab} />
+        </div>
+        
+        <motion.div 
+          className="h-64 md:h-80 bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+              <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end space-x-2 mb-4">
@@ -362,8 +259,40 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        {chartData && chartData.labels && chartData.labels.length > 0 ? (
-          <DynamicChart data={chartData} options={chartOptions} />
+        {chartData && chartData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+              data={chartData}
+              margin={{
+                top: 5,
+                right: 20,
+                left: 0,
+                bottom: 5,
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              <Area 
+                type="monotone" 
+                dataKey="Kredi" 
+                stroke="#6366f1" 
+                fill="rgba(99, 102, 241, 0.1)" 
+                strokeWidth={2}
+                activeDot={{ r: 8 }}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="Güven" 
+                stroke="#14b8a6" 
+                fill="rgba(20, 184, 166, 0.1)" 
+                strokeWidth={2}
+                activeDot={{ r: 8 }} 
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         ) : (
           <EmptyChart />
         )}
