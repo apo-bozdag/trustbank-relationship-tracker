@@ -1,20 +1,46 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import dynamic from 'next/dynamic';
 import { RelationshipStatus } from '../types';
 import { format, parseISO, addDays, differenceInDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { motion } from 'framer-motion';
-import type { ChartData, ChartOptions } from 'chart.js';
 
-// Chart.js bileşenlerini dynamic import ile sadece client tarafında yükle
-const LineChart = dynamic(
-  () => import('react-chartjs-2').then(mod => {
-    // Chart.js'i sadece client tarafında import et ve kaydet
-    import('chart.js').then(ChartJS => {
+// NoSSR bileşeni - sadece client-side'da render edilecek
+function NoSSR({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  if (!mounted) {
+    return (
+      <div className="h-64 md:h-80 bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+          <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  return <>{children}</>;
+}
+
+interface RelationshipChartProps {
+  relationship: RelationshipStatus;
+}
+
+export default function RelationshipChart({ relationship }: RelationshipChartProps) {
+  const [chartComponent, setChartComponent] = useState<React.ReactNode>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'month' | 'week'>('all');
+
+  useEffect(() => {
+    // Dinamik olarak Chart.js'i import et
+    import('chart.js').then((ChartJS) => {
       const { 
-        Chart, 
+        Chart,
         CategoryScale, 
         LinearScale, 
         PointElement, 
@@ -36,47 +62,50 @@ const LineChart = dynamic(
         Legend,
         Filler
       );
+      
+      // Line bileşenini import et
+      import('react-chartjs-2').then((ReactChartJS) => {
+        const { Line } = ReactChartJS;
+        
+        // Veriyi hazırla ve chart component'i ayarla
+        const chartData = prepareChartData(relationship, activeTab, ChartJS);
+        const options = getChartOptions();
+        
+        if (chartData.labels?.length) {
+          setChartComponent(
+            <Line data={chartData} options={options} />
+          );
+        } else {
+          setChartComponent(
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center text-gray-500 dark:text-gray-400">
+                <svg className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                <p>Seçilen zaman aralığında veri bulunmuyor</p>
+              </div>
+            </div>
+          );
+        }
+      });
     });
-    return mod.Line;
-  }),
-  { ssr: false } // SSR'yi devre dışı bırak
-);
+  }, [relationship, activeTab]);
 
-interface RelationshipChartProps {
-  relationship: RelationshipStatus;
-}
-
-export default function RelationshipChart({ relationship }: RelationshipChartProps) {
-  const [chartData, setChartData] = useState<ChartData<'line'>>({
-    labels: [],
-    datasets: []
-  });
-  const [activeTab, setActiveTab] = useState<'all' | 'month' | 'week'>('all');
-  const [isClient, setIsClient] = useState(false);
-  const chartRef = useRef<any>(null);
-
-  // Client tarafında olduğumuzu kontrol et
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  useEffect(() => {
-    if (isClient) {
-      // Grafik verisini hazırla
-      prepareChartData(relationship, activeTab);
-    }
-  }, [relationship, activeTab, isClient]);
-
-  const prepareChartData = (relationship: RelationshipStatus, period: 'all' | 'month' | 'week') => {
+  // Chart.js için veri hazırlama
+  const prepareChartData = (
+    relationship: RelationshipStatus, 
+    period: 'all' | 'month' | 'week',
+    ChartJS: any
+  ) => {
+    // Eğer olay yoksa
     if (!relationship.events.length) {
-      // Henüz olay yoksa, sadece başlangıç değerini göster
       const startDate = parseISO(relationship.startDate);
       
       const labels = [
         format(startDate, 'dd MMM', { locale: tr })
       ];
       
-      setChartData({
+      return {
         labels,
         datasets: [
           {
@@ -108,8 +137,7 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
             }
           },
         ],
-      });
-      return;
+      };
     }
 
     // Olayları tarihe göre sırala (eskiden yeniye)
@@ -151,7 +179,7 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         format(point.date, 'dd MMM', { locale: tr })
       );
       
-      setChartData({
+      return {
         labels,
         datasets: [
           {
@@ -183,8 +211,7 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
             }
           },
         ],
-      });
-      return;
+      };
     }
 
     // Başlangıç kredi ve güven değerleri 
@@ -234,11 +261,10 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     
     // Veri noktası yoksa boş grafik göster
     if (dataPoints.length === 0) {
-      setChartData({
+      return {
         labels: [],
         datasets: []
-      });
-      return;
+      };
     }
 
     // Grafik verilerini oluştur
@@ -246,7 +272,7 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
       format(point.date, 'dd MMM', { locale: tr })
     );
     
-    setChartData({
+    return {
       labels,
       datasets: [
         {
@@ -278,70 +304,73 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
           }
         },
       ],
-    });
+    };
   };
 
-  const options: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      y: {
-        beginAtZero: true,
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)',
+  // Chart.js için options oluştur
+  const getChartOptions = () => {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: 'rgba(0, 0, 0, 0.05)',
+          }
+        },
+        x: {
+          grid: {
+            display: false
+          }
         }
       },
-      x: {
-        grid: {
-          display: false
-        }
-      }
-    },
-    plugins: {
-      legend: {
-        position: 'top' as const,
-        labels: {
+      plugins: {
+        legend: {
+          position: 'top' as const,
+          labels: {
+            usePointStyle: true,
+            boxWidth: 10,
+            boxHeight: 10,
+            padding: 20,
+            font: {
+              size: 12
+            }
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(255, 255, 255, 0.8)',
+          titleColor: '#1f2937',
+          bodyColor: '#4b5563',
+          borderColor: 'rgba(0, 0, 0, 0.1)',
+          borderWidth: 1,
+          padding: 12,
+          boxPadding: 6,
           usePointStyle: true,
-          boxWidth: 10,
-          boxHeight: 10,
-          padding: 20,
-          font: {
-            size: 12
+          callbacks: {
+            label: function(context: any) {
+              const label = context.dataset.label || '';
+              const value = context.parsed.y;
+              return `${label}: ${value}`;
+            }
           }
         }
       },
-      tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.8)',
-        titleColor: '#1f2937',
-        bodyColor: '#4b5563',
-        borderColor: 'rgba(0, 0, 0, 0.1)',
-        borderWidth: 1,
-        padding: 12,
-        boxPadding: 6,
-        usePointStyle: true,
-        callbacks: {
-          label: function(context) {
-            const label = context.dataset.label || '';
-            const value = context.parsed.y;
-            return `${label}: ${value}`;
-          }
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
+      elements: {
+        line: {
+          borderWidth: 3,
+          borderJoinStyle: 'round'
+        },
+        point: {
+          hoverRadius: 8,
+          hoverBorderWidth: 2
         }
       }
-    },
-    interaction: {
-      mode: 'index',
-      intersect: false,
-    },
-    elements: {
-      line: {
-        borderWidth: 3,
-        borderJoinStyle: 'round'
-      },
-      point: {
-        hoverRadius: 8,
-        hoverBorderWidth: 2
-      }
-    }
+    };
   };
 
   const TabButton = ({ label, value, currentValue, onClick }: { 
@@ -362,18 +391,6 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
     </button>
   );
 
-  // İlk renderda henüz client tarafında değilsek veya veri hazır değilse, loading göster
-  if (!isClient) {
-    return (
-      <div className="h-64 md:h-80 bg-white dark:bg-slate-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-          <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end space-x-2 mb-4">
@@ -389,18 +406,16 @@ export default function RelationshipChart({ relationship }: RelationshipChartPro
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        {chartData.labels?.length ? (
-          <LineChart data={chartData} options={options} />
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center text-gray-500 dark:text-gray-400">
-              <svg className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-              </svg>
-              <p>Seçilen zaman aralığında veri bulunmuyor</p>
+        <NoSSR>
+          {chartComponent || (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-gray-500 dark:text-gray-400">Grafik yükleniyor...</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </NoSSR>
       </motion.div>
     </div>
   );
